@@ -2,80 +2,83 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 import org.json.*;
-import java.math.BigInteger;   // ✅ add this
-
+import java.math.BigInteger;
 
 public class ShamirSecretSharing {
 
-    // Function to calculate Lagrange Interpolation at x=0
-    public static BigInteger lagrangeInterpolation(List<int[]> xPoints, List<BigInteger> yPoints, int k) {
-    BigInteger secret = BigInteger.ZERO;
+    public static BigInteger lagrangeInterpolation(List<int[]> xPoints, List<BigInteger> yPoints, int k, BigInteger prime) {
+        BigInteger secret = BigInteger.ZERO;
+        for (int i = 0; i < k; i++) {
+            int xi = xPoints.get(i)[0];
+            BigInteger yi = yPoints.get(i);
+            BigInteger num = BigInteger.ONE;
+            BigInteger den = BigInteger.ONE;
 
-    for (int i = 0; i < k; i++) {
-        int xi = xPoints.get(i)[0];
-        BigInteger yi = yPoints.get(i);
-
-        // Compute li(0) as fraction
-        BigInteger num = BigInteger.ONE;
-        BigInteger den = BigInteger.ONE;
-
-        for (int j = 0; j < k; j++) {
-            if (i != j) {
-                int xj = xPoints.get(j)[0];
-                num = num.multiply(BigInteger.valueOf(-xj));
-                den = den.multiply(BigInteger.valueOf(xi - xj));
+            for (int j = 0; j < k; j++) {
+                if (i != j) {
+                    int xj = xPoints.get(j)[0];
+                    num = num.multiply(BigInteger.valueOf(-xj)).mod(prime);
+                    den = den.multiply(BigInteger.valueOf(xi - xj)).mod(prime);
+                }
             }
-        }
 
-        // li(0) = num / den
-        // yi * li(0) = yi * num / den
-        // → Do division at the end
-        BigInteger term = yi.multiply(num).divide(den);
-        secret = secret.add(term);
+            BigInteger li0 = num.multiply(den.modInverse(prime)).mod(prime);
+            BigInteger term = yi.multiply(li0).mod(prime);
+            secret = secret.add(term).mod(prime);
+        }
+        return secret;
     }
 
-    return secret;
-}
-
+    public static BigInteger findSuitablePrime(List<BigInteger> values) {
+        BigInteger maxVal = values.stream().max(BigInteger::compareTo).orElse(BigInteger.ZERO);
+        return maxVal.nextProbablePrime();
+    }
 
     public static void main(String[] args) {
-    try {
-        String content = new String(Files.readAllBytes(Paths.get("input1.json")));
-        JSONObject json = new JSONObject(content);
+        try {
+            String content = new String(Files.readAllBytes(Paths.get("input1.json")));
+            JSONObject root = new JSONObject(content);
+            JSONArray testcases = root.getJSONArray("testcases");
 
-        int n = json.getJSONObject("keys").getInt("n");
-        int k = json.getJSONObject("keys").getInt("k");
+            for (int t = 0; t < testcases.length(); t++) {
+                JSONObject json = testcases.getJSONObject(t);
 
-        List<int[]> xPoints = new ArrayList<>();
-        List<BigInteger> yPoints = new ArrayList<>();
+                int n = json.getJSONObject("keys").getInt("n");
+                int k = json.getJSONObject("keys").getInt("k");
 
-        for (String key : json.keySet()) {
-            if (!key.equals("keys")) {
-                JSONObject obj = json.getJSONObject(key);
+                List<int[]> xPoints = new ArrayList<>();
+                List<BigInteger> yPoints = new ArrayList<>();
 
-                int x = Integer.parseInt(key);
-                int base = Integer.parseInt(obj.getString("base"));
-                String valueStr = obj.getString("value");
+                for (String key : json.keySet()) {
+                    if (!key.equals("keys")) {
+                        JSONObject obj = json.getJSONObject(key);
+                        int x = Integer.parseInt(key);
+                        int base = obj.getInt("base");
+                        String valueStr = obj.get("value").toString();
 
-                // decode huge value correctly
-                BigInteger decodedValue = new BigInteger(valueStr, base);
+                        BigInteger decodedValue = new BigInteger(valueStr, base);
+                        xPoints.add(new int[]{x});
+                        yPoints.add(decodedValue);
+                    }
+                }
 
-                xPoints.add(new int[]{x});
-                yPoints.add(decodedValue);
+                if (xPoints.size() < k) {
+                    System.out.println("Test case " + (t + 1) + ": Not enough shares to reconstruct.");
+                    continue;
+                }
+
+                BigInteger prime = findSuitablePrime(yPoints);
+                System.out.println("Test case " + (t + 1) + " using prime modulus: " + prime);
+
+                List<int[]> chosenX = xPoints.subList(0, k);
+                List<BigInteger> chosenY = yPoints.subList(0, k);
+
+                BigInteger secret = lagrangeInterpolation(chosenX, chosenY, k, prime);
+                System.out.println("Test case " + (t + 1) + " secret = " + secret + "\n");
             }
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-
-        // Pick first k shares (or shuffle for different subsets)
-        List<int[]> chosenX = xPoints.subList(0, k);
-        List<BigInteger> chosenY = yPoints.subList(0, k);
-
-        BigInteger secret = lagrangeInterpolation(chosenX, chosenY, k);
-        System.out.println("Secret (c) = " + secret);
-
-    } catch (Exception e) {
-        e.printStackTrace();
     }
-}
-
-
 }
